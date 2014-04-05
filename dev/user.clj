@@ -12,6 +12,7 @@
 
 
 (read-config!)
+(reset! crashey-enabled true)
 
 (defn bytes-to-megabytes [bytes] (* bytes 9.5367431640625e-07))
 (defn bytes-to-gigabytes [bytes] (* bytes 9.31322574615479e-10))

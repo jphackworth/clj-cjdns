@@ -10,6 +10,7 @@
   (:require [cheshire.core :refer :all]
     [aleph.udp :refer :all]
     [bencode.core :refer :all]
+    [flatland.useful.map :refer :all]
     [gloss.core :refer :all]
     [pandect.core :refer :all]
     [lamina.core :refer :all]
@@ -18,6 +19,7 @@
 ;;; Configuration
 
 (def config (atom nil))
+(def crashey-enabled (atom false))
 
 (defn read-config! 
   "Reads a JSON-formatted config file at either $HOME/.cjdnsadmin or path specified. 
@@ -42,6 +44,12 @@
    (Exception.)
    (throw))
   (reset! config (parse-string (slurp config-path) true)))))
+
+(defn crashey-enabled? [] 
+  (if (false? @crashey-enabled) 
+    (-> "Error: This function requires the crashey branch of cjdns. Set crashey-enabled to true use this: (reset! crashey-enabled true)"
+        (Exception.)
+        (throw))))
 
 ;;; Network Utility Functions
 
@@ -97,17 +105,17 @@
     (send!)
     (bdecode)))
 
-(defn looped-auth-request [f k]
+(defn looped-auth-request [admin-function k f]
  (let [page 0]
   (loop [page page 
-   results (auth-request f {:args {:page page}})
-   all-results (k results)]
+         results (auth-request admin-function {:args {:page page}})
+         all-results (k results)]
    (if (:more results)
-    (recur (inc page) (auth-request f {:args {:page page}}) (into [] (concat all-results (k results))))
+    (recur (inc page) (auth-request admin-function {:args {:page page}}) (f all-results (k results)))
     all-results)))) 
 
 (defn admin-available-functions [] 
-  (looped-auth-request "Admin_availableFunctions" :availableFunctions))
+  (looped-auth-request "Admin_availableFunctions" :availableFunctions #(merge %1 %2)))
 
 (defn auth-ping [] (auth-request "ping"))
 
@@ -138,16 +146,20 @@
   
   See: https://github.com/cjdelisle/cjdns/tree/master/admin#routermodule_pingnode for examples."
   [node-path & [timeout]]
-  (let [args (if-not (nil? timeout) 
-   {:args {:path node-path :timeout timeout}}
-   {:args {:path node-path}})]
-  (auth-request "RouterModule_pingNode" args)))
+  (let [args (-> {:path node-path :timeout timeout} 
+                 (remove-vals nil?))]
+    (auth-request "RouterModule_pingNode" {:args args})))
 
 (defn peer-stats []
-  (looped-auth-request "InterfaceController_peerStats" :peers))
+  (looped-auth-request "InterfaceController_peerStats" :peers #(into [] (concat %1 %2))))
+
+(defn get-peers [node-path & [{:keys [nearby-path timeout] :as options}]]
+  (crashey-enabled?)
+  (let [args (remove-vals {:path node-path :nearbyPath nearby-path :timeout timeout} nil?)]
+   (auth-request "RouterModule_getPeers" {:args args})))
 
 (defn dump-table [] 
-  (looped-auth-request "NodeStore_dumpTable" :routingTable))
+  (looped-auth-request "NodeStore_dumpTable" :routingTable #(into [] (concat %1 %2))))
 
 
 

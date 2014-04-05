@@ -6,9 +6,42 @@ This is library provides support for the several of the admin functions.
 
 ## Leiningen Project Dependency
 
-[clj-cjdns "0.1.1"]
+[clj-cjdns "0.1.2"]
 
 # Usage
+
+## Crashey support
+
+I've begun adding admin functions that are only available in the [crashey branch of cjdns](https://github.com/cjdelisle/cjdns/tree/crashey). 
+
+To use these functions, you must set the crashey-enabled atom to true, otherwise an exception will be thrown.
+
+An example of a new admin function is get-peers:
+
+```clojure
+user=> (use 'clj-cjdns.core 'clojure.pprint)
+nil
+user=> (pprint (get-peers "fcf1:4c00:7171:d61a:d4ce:3a5d:ea79:ad3e"))
+
+Exception Error: This function requires the crashey branch of cjdns. Set crashey-enabled to true use this: (reset! crashey-enabled true)  clj-cjdns.core/crashey-enabled? (core.clj:49)
+user=> (reset! crashey-enabled true)
+user=> (pprint (get-peers "fcf1:4c00:7171:d61a:d4ce:3a5d:ea79:ad3e"))
+{:error "none",
+:ms 364,
+:peers
+["v2.0000.0000.0082.9233.lkmcfq0qd6nsdls2826p80r82854ypwzzj4mxtj41xdfd3z2s570.k"
+"v5.0000.0000.0083.1233.qvnz262dnhm05m3unkbz27uwzx8lkup6m9mhc3gk6zjhky8dy8m0.k"
+"v6.0000.0000.0083.9233.my455p859j9zhrgzwgg4w8k2uj2y3yfl1km6my2ut838b82gln30.k"
+"v6.0000.0000.0084.1233.23d9qmlw59rv0d9yusgh9ltgszy4hz1m54yp342rn3sfntu4ns70.k"
+"v6.0000.0000.0084.9233.8hgr62ylugxjyyhxkz254qtz60p781kbswmhhywtbb5rpzc5lxj0.k"
+"v6.0000.0000.0085.1233.2z5lkm9d7c8rbc77qty33sfv050mj5fpc6wjfbbqjyb7kxbrxvj0.k"
+"v6.0000.0000.0086.1233.jufvunvsmy08r69dhhw1w170d26qj5kvybdcf45jbkrtw7pb7cl0.k"
+"v6.0000.0000.0086.9233.nhmsdzjv6p2gmmwgl8tjlxkj2y0l1b382ur67ppgvnw3pxs96zf0.k"],
+:result "peers"}
+nil
+```
+
+Crashey admin function support is minimal at this stage. More coming in future versions.
 
 ## Configuration
 
