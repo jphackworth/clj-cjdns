@@ -103,9 +103,7 @@
    results (auth-request f {:args {:page page}})
    all-results (k results)]
    (if (:more results)
-    (recur (inc page) 
-     (auth-request f {:args {:page page}})
-     (conj all-results (k results)))
+    (recur (inc page) (auth-request f {:args {:page page}}) (into [] (concat all-results (k results))))
     all-results)))) 
 
 (defn admin-available-functions [] 
