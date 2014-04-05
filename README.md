@@ -6,7 +6,7 @@ This is library provides support for the several of the admin functions.
 
 ## Leiningen Project Dependency
 
-[clj-cjdns "0.1.0"]
+[clj-cjdns "0.1.1"]
 
 # Usage
 
