@@ -13,8 +13,11 @@
     [flatland.useful.map :refer :all]
     [gloss.core :refer :all]
     [pandect.core :refer :all]
+    [clojure.string :as str]
     [lamina.core :refer :all]
-    [clojure.java.io :refer :all]))
+    [clojure.java.io :refer :all])
+  (:import java.net.Inet6Address 
+           java.net.UnknownHostException))
 
 ;;; Configuration
 
@@ -51,14 +54,97 @@
         (Exception.)
         (throw))))
 
-;;; Network Utility Functions
+(def loop-forever (comp doall repeatedly))
 
-(defn send! [message] 
-  (let [sock @(udp-socket {:frame (string :utf-8)})
-    msg {:host (:addr @config)
-     :port (:port @config)}]
-     (enqueue sock (assoc msg :message (bencode message)))
-     (:message @(read-channel sock))))
+; Following exception macros from: http://bitumenframework.blogspot.fi/2011/01/non-breaking-error-handling-in-clojure.html
+
+(defmacro filter-exception
+  "Execute body of code and in case of an exception, ignore it if (pred ex)
+  returns false (i.e. rethrow if true) and return nil."
+  [pred & body]
+  `(try ~@body
+     (catch Exception e#
+       (when (~pred e#)
+         (throw e#)))))
+
+(defmacro with-exceptions
+  "Execute body of code in the context of exceptions to be re-thrown or ignored.
+  Args:
+    throw-exceptions - List of exceptions that should be re-thrown
+    leave-exceptions - List of exceptions that should be suppressed
+  Note: 'throw-exceptions' is given preference over 'leave-exceptions'
+  Example usage:
+    ;; ignore all runtime exceptions except
+    ;; IllegalArgumentException and IllegalStateException
+    (with-exceptions [IllegalArgumentException IllegalStateException] [RuntimeException]
+      ...)"
+  [throw-exceptions leave-exceptions & body]
+  `(filter-exception (fn [ex#]
+                       (cond
+                         (some #(instance? % ex#) ~throw-exceptions) true
+                         (some #(instance? % ex#) ~leave-exceptions) false
+                         :else true))
+     ~@body))
+
+(defn resolve-hostname 
+  [^String hostname]
+  (.getHostAddress (Inet6Address/getByName hostname)))
+
+(defn resolvable? 
+  [^String hostname] 
+  (boolean (with-exceptions [] [UnknownHostException] (resolve-hostname hostname))))                
+
+;;; Path Validation / Regex
+; [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]
+(def cjdns-ipv6-pattern-string (str "(fc[0-9a-fA-F][0-9a-fA-F]):" (str/join ":" (repeat 7 "([0-9a-fA-F]{2,4})"))))
+(def       ipv6-pattern-string (str/join ":" (repeat 8 "([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])")))
+(def      route-pattern-string (str/join "." (repeat 4 "([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])")))
+
+(def   cjdns-ipv6-pattern (re-pattern (str "(?m)^" cjdns-ipv6-pattern-string "$")))
+(def         ipv6-pattern (re-pattern (str "(?m)^" ipv6-pattern-string "$")))
+(def cjdns-route-pattern (re-pattern (str "(?m)^" route-pattern-string "$")))
+(def       ippath-pattern (re-pattern (str "(?m)^" (str cjdns-ipv6-pattern-string "@" route-pattern-string "$"))))
+
+(defn cjdns-ipv6-addr? [^String v] (boolean (re-seq cjdns-ipv6-pattern v)))
+(defn       ipv6-addr? [^String v] (boolean (re-seq ipv6-pattern v)))
+(defn     cjdns-route? [^String v] (boolean (re-seq cjdns-route-pattern v)))
+(defn          ippath? [^String v] (boolean (re-seq ippath-pattern v)))
+(defn cjdns-ipv6-host? [^String v] (boolean (re-seq cjdns-ipv6-pattern (resolve-hostname v))))
+              
+(defn valid-path? 
+  "Validate that the path is one of four possible options: 
+  
+  1. cjdns IPv6 address of the form: fcXX:XXXX:XXXX:XXXX:XXXX:XXXX:XXXX:XXXX
+  2. cjdns route of the form: XXXX.XXXX.XXXX.XXXX
+  3. cjdns IPv6 with a specific route of the form: fcXX:XXXX:XXXX:XXXX:XXXX:XXXX:XXXX:XXXX@XXXX.XXXX.XXXX.XXXX
+  4. A hostname that resolves to a cjdns IPv6 address 
+  
+  These are sequentially tested. 
+  
+  Exceptions are thrown in the following cases:
+  
+  1. A hostname doesn't resolve 
+  2. A hostname resolves to an IPv4 address
+  3. A hostname resolves to a standard IPv6 address 
+  "
+  [^String v] 
+  (if-let [path (cond 
+   (cjdns-ipv6-addr? v) v ; 
+       (cjdns-route? v) v ; 
+            (ippath? v) v ;
+   (and (resolvable? v) (cjdns-ipv6-addr? (resolve-hostname v))) (resolve-hostname v))]
+    path
+    false))  
+                                   
+;;; Network Utility Functions
+                                   
+(defn send! [message & [{:keys [async? socket] :as params}]] 
+  (let [socket (if-not (nil? socket) socket @(udp-socket {:frame (string :utf-8)}))
+        msg {:host (:addr @config) :port (:port @config)}]
+     (enqueue socket (assoc msg :message (bencode message)))
+     (if async? 
+       socket 
+       (:message @(read-channel socket)))))
 
 (defn get-hash [cookie] (sha256 (str (:password @config) cookie)))
 
@@ -84,8 +170,8 @@
      (Exception.)
      (throw))) 
   (-> {:q query}
-    (send!)
-    (bdecode)))
+      (send!)
+      (bdecode)))
 
 (defn ping [] (public-request "ping"))
 
@@ -134,10 +220,15 @@
 (defn disconnect-peer [pubkey] 
   (auth-request "InterfaceController_disconnectPeer" {:args {:pubkey pubkey}}))
 
-(defn switch-ping [path & [{:keys [data timeout] :as params}]] 
-  (let [args {:args (-> {:path path}
-    (merge params))}]
-  (auth-request "SwitchPinger_ping" args)))
+(defn switch-ping [path & [{:keys [data timeout] :as params}]]
+  (if (cjdns-route? path) 
+    (let [args (-> {:path path :data data :timeout timeout} 
+                   (remove-vals nil?))]
+      (auth-request "SwitchPinger_ping"{:args args}))
+    (-> "Error: Invalid route supplied."
+        (format) 
+        (Exception.) 
+        (throw))))
 
 (defn node-ping 
   "Pings a remote cjdns node. 
@@ -145,26 +236,70 @@
   node-path may be either a route, a cjdns IP, or a cjdns IP via a specified route.
   
   See: https://github.com/cjdelisle/cjdns/tree/master/admin#routermodule_pingnode for examples."
-  [node-path & [timeout]]
-  (let [args (-> {:path node-path :timeout timeout} 
-                 (remove-vals nil?))]
-    (auth-request "RouterModule_pingNode" {:args args})))
+  [path & [timeout]]
+  (if-let [path (valid-path? path)]
+    (let [args (-> {:path path :timeout timeout} (remove-vals nil?))]
+      (auth-request "RouterModule_pingNode" {:args args})) 
+    (-> "Error: Invalid path supplied."
+        (format) 
+        (Exception.) 
+        (throw))))
 
 (defn peer-stats []
   (looped-auth-request "InterfaceController_peerStats" :peers #(into [] (concat %1 %2))))
 
-(defn get-peers [node-path & [{:keys [nearby-path timeout] :as options}]]
+(defn get-peers [path & [{:keys [nearby-path timeout] :as options}]]
   (crashey-enabled?)
-  (let [args (remove-vals {:path node-path :nearbyPath nearby-path :timeout timeout} nil?)]
-   (auth-request "RouterModule_getPeers" {:args args})))
+  (if-let [path (valid-path? path)]
+    (let [args (-> {:path path :nearbyPath nearby-path :timeout timeout} 
+                   (remove-vals nil?))]
+      (auth-request "RouterModule_getPeers" {:args args}))
+    (-> "Error: Invalid path supplied."
+        (format)
+        (Exception.)
+        (throw))))
 
-(defn lookup-address [addr]
-  (crashey-enabled?)
-  (auth-request "RouterModule_lookup" {:args {:address addr}}))
+; (defn lookup-address [addr]
+;   (crashey-enabled?)
+;   (if (cjdns-ipv6-addr? addr)
+;     (auth-request "RouterModule_lookup" {:args {:address addr}})
+;     (-> "Error: Invalid cjdns IPv6 address"
+;         (format)
+;         (Exception.)
+;         (throw))))
 
 (defn dump-table [] 
   (looped-auth-request "NodeStore_dumpTable" :routingTable #(into [] (concat %1 %2))))
 
+
+(defn admin-log-subscribe
+  "admin-log-subscribe creates a subscription request to the cjdns router. 
+  
+  It returns an array map containing the background ping process which keeps the logs alive, 
+  as well as the channel to read log messages from.
+  
+  "
+  [{:keys [file level line] :as options}]
+   (if (nil? @config)
+    (-> "Error: No config available. You must (read-config!) first"
+     (Exception.)
+     (throw))) 
+   
+  (let [query {:q "auth" :aq "AdminLog_subscribe"}
+        args (-> {:file file :level level :line line}
+                 (remove-vals nil?))
+        message (->> {:args args}
+                     (merge query)
+                     (sign-request)) 
+        ch (send! message {:async? true})]
+    
+     {:ping (future (loop-forever (fn [] (Thread/sleep 2000) (send! {:q "ping"} {:socket ch}))))
+      :channel ch
+      :stream-id (:streamId (bdecode (:message @(read-channel ch))))}))
+
+(defn admin-log-unsubscribe 
+  [^String stream-id]
+  (auth-request "AdminLog_unsubscribe" {:args {:streamId stream-id}}))
 
 
 

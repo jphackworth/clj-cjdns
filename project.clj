@@ -1,4 +1,4 @@
-(defproject clj-cjdns "0.1.3"
+(defproject clj-cjdns "0.1.4"
   :description "Library for communicating with Cjdns Admin interface"
   :url "https://github.com/jphackworth/clj-cjdns"
   :license {:name "Eclipse Public License"
