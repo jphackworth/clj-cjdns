@@ -158,6 +158,10 @@
   (let [args (remove-vals {:path node-path :nearbyPath nearby-path :timeout timeout} nil?)]
    (auth-request "RouterModule_getPeers" {:args args})))
 
+(defn lookup-address [addr]
+  (crashey-enabled?)
+  (auth-request "RouterModule_lookup" {:args {:address addr}}))
+
 (defn dump-table [] 
   (looped-auth-request "NodeStore_dumpTable" :routingTable #(into [] (concat %1 %2))))
 

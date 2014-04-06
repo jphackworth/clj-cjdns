@@ -1,4 +1,4 @@
-(defproject clj-cjdns "0.1.2"
+(defproject clj-cjdns "0.1.3"
   :description "Library for communicating with Cjdns Admin interface"
   :url "https://github.com/jphackworth/clj-cjdns"
   :license {:name "Eclipse Public License"
@@ -9,7 +9,7 @@
     [cheshire "5.3.1"]
     [aleph "0.3.2"]
     [lamina "0.5.2"]
-    [pandect "0.3.0"]]
+    [pandect "0.3.0"]
+    [org.flatland/useful "0.11.2"]]
   :profiles {:dev {:source-paths ["dev"]
-                   :dependencies [[org.clojure/tools.namespace "0.2.4"]
-                                   [org.flatland/useful "0.11.2"]]}})
+                   :dependencies [[org.clojure/tools.namespace "0.2.4"]]}})
